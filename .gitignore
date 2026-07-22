@@ -3,3 +3,4 @@ clab-*/
 *.ansible_inventory
 ssh-config
 topology-data.json
+clab-*/*/config/aaamgr_local_user.json

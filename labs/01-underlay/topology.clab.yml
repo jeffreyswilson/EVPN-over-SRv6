@@ -6,18 +6,22 @@ topology:
       kind: nokia_srlinux
       type: ixr-d3
       image: ghcr.io/nokia/srlinux:24.10.7
+      startup-config: startup-configs/spine1.json
     spine2:
       kind: nokia_srlinux
       type: ixr-d3
       image: ghcr.io/nokia/srlinux:24.10.7
+      startup-config: startup-configs/spine2.json
     leaf1:
       kind: nokia_srlinux
       type: ixr-d3
       image: ghcr.io/nokia/srlinux:24.10.7
+      startup-config: startup-configs/leaf1.json
     leaf2:
       kind: nokia_srlinux
       type: ixr-d3
       image: ghcr.io/nokia/srlinux:24.10.7
+      startup-config: startup-configs/leaf2.json
 
   links:
     - endpoints: ["spine1:e1-1", "leaf1:e1-1"]
