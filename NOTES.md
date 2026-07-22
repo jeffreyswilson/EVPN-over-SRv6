@@ -184,3 +184,16 @@ Next: containerlab save to snapshot this running state into
 02-l2evpn-overlay/startup-configs/*.json, per the plan agreed before
 this phase began -- makes the phase reproducible from a fresh deploy,
 not just from this session's live CLI history.
+
+## Phase 4 reproducibility confirmed -- 7/22/26
+
+containerlab save captured live EVPN config into leaf1/leaf2 config.json.
+Copied into startup-configs/leaf1.json and leaf2.json (spine1/spine2
+startup-configs unchanged -- byte-identical to Phase 1, confirmed via
+file size match, no EVPN config ever touched them).
+
+Destroyed and redeployed labs/02-l2evpn-overlay/ from these
+startup-configs alone, no live CLI re-entry. srv1 <-> srv2 ping
+succeeded immediately post-deploy. This confirms the phase is fully
+reproducible from a fresh clone -- same destroy+redeploy validation
+pattern established in Phase 1.

@@ -1,0 +1,45 @@
+name: l2evpn-overlay01
+
+topology:
+  kinds:
+    linux:
+      image: ghcr.io/srl-labs/network-multitool:latest
+  nodes:
+    spine1:
+      kind: nokia_srlinux
+      type: ixr-d3
+      image: ghcr.io/nokia/srlinux:24.10.7
+      startup-config: startup-configs/spine1.json
+    spine2:
+      kind: nokia_srlinux
+      type: ixr-d3
+      image: ghcr.io/nokia/srlinux:24.10.7
+      startup-config: startup-configs/spine2.json
+    leaf1:
+      kind: nokia_srlinux
+      type: ixr-d3
+      image: ghcr.io/nokia/srlinux:24.10.7
+      startup-config: startup-configs/leaf1.json
+    leaf2:
+      kind: nokia_srlinux
+      type: ixr-d3
+      image: ghcr.io/nokia/srlinux:24.10.7
+      startup-config: startup-configs/leaf2.json
+    srv1:
+      kind: linux
+      exec:
+        - ip link set address 00:c1:ab:00:00:01 dev eth1
+        - ip addr add 192.168.0.1/24 dev eth1
+    srv2:
+      kind: linux
+      exec:
+        - ip link set address 00:c1:ab:00:00:02 dev eth1
+        - ip addr add 192.168.0.2/24 dev eth1
+
+  links:
+    - endpoints: ["spine1:e1-1", "leaf1:e1-1"]
+    - endpoints: ["spine1:e1-2", "leaf2:e1-1"]
+    - endpoints: ["spine2:e1-1", "leaf1:e1-2"]
+    - endpoints: ["spine2:e1-2", "leaf2:e1-2"]
+    - endpoints: ["srv1:eth1", "leaf1:e1-3"]
+    - endpoints: ["srv2:eth1", "leaf2:e1-3"]
