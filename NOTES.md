@@ -104,3 +104,36 @@ Proceeding directly to Phase 3 (SRv6 migration) on the existing
 as of this note -- next session's first action is finding out live,
 not assuming parity with the MPLS restriction just hit.
 
+## Phase 3 decision -- 7/22/26
+
+Attempted Phase 3 (SRv6 migration) on spine1: `segment-routing srv6`
+not available on this platform, confirmed live via CLI. Root cause,
+confirmed via Nokia's own SRv6 documentation: SRv6 is currently
+supported exclusively on 7730 SXR platforms -- narrower than the
+SR-MPLS restriction hit in Phase 2 (7250 IXR + 7730 SXR). This chassis
+(`ixr-d3`) cannot reach SRv6 regardless of license.
+
+## Pivot decision -- 7/22/26
+
+Repo destination (EVPN over SRv6) is not achievable on this hardware
+profile without a chassis-type change to 7730 SXR plus a Nokia license.
+Decision: pivot to EVPN over a VXLAN data plane instead of SRv6.
+
+Confirmed via Nokia's own EVPN for Layer 3 guide: EVPN-VXLAN is
+supported directly on 7220 IXR-D2/D3/D2L/D3L -- this exact chassis --
+with no license required. Contrast: EVPN-MPLS remains restricted to
+7250 IXR / 7730 SXR, same pattern as the SR-MPLS/SRv6 walls just hit,
+because EVPN-MPLS needs the MPLS dataplane and EVPN-VXLAN doesn't.
+Nokia's own official L2 EVPN tutorial (learn.srlinux.dev) runs this
+exact configuration on `ixr-d2`/`ixr-d3` nodes with no license file
+referenced anywhere in it -- direct, run-it-yourself precedent.
+
+Repo name retained (not renamed to drop "SRv6"). The SRv6 attempt,
+correctly diagnosed via live CLI + vendor docs across two real platform
+walls, is part of the story this repo tells, not something to scrub.
+README carries an explanatory note rather than a silent rewrite.
+
+Effective phase order going forward: 0 -> 1 -> 4 -> 5. Phases 2 and 3
+are retained below as documented dead ends -- Phase 4 depends only on
+Phase 1's ISIS underlay (loopback reachability for VTEP peering), not
+on 2 or 3, so it's unblocked and moves up next.

@@ -14,6 +14,15 @@ Containerlab, on a single ARM64 Ubuntu VM (Parallels, M4 MacBook Pro).
 No emulation layer anywhere in the stack -- Parallels uses Apple's Hypervisor.framework
 (not QEMU) for the arm64 guest, and all images/binaries are arm64-native.
 
+**Scope note (7/22/26):** This repo set out to build EVPN over an
+SRv6 underlay. Phases 2 (SR-MPLS) and 3 (SRv6) hit real, vendor-
+confirmed chassis restrictions on this lab's hardware profile (7220
+IXR-D3, license-free) -- both features are gated to 7250 IXR / 7730
+SXR on SR Linux. Pivoted to EVPN over a VXLAN data plane, which this
+chassis supports without a license. Name kept -- the SRv6 attempt
+and diagnosis are part of the record, not scrubbed. Full decision
+trail in NOTES.md.
+
 ## Curriculum arc
 
 ### Phase 0 -- Verification (`labs/00-single-node-verify`)
@@ -32,16 +41,16 @@ Add segment IDs and label advertisement to the same ISIS instance, IPv4 MPLS dat
 still in place. Isolates "ISIS now carries SR info" from the IPv6/SRv6 dataplane jump
 that follows in Phase 3.
 
-### Phase 3 -- SRv6 migration
+### Phase 3 -- SRv6 migration (BLOCKED -- see NOTES.md 7/22/26)
 Replace SR-MPLS with SRv6: locator/function ID structure, ISIS SRv6 extensions, IPv6
 dataplane. This is the underlay the repo name commits to.
 
-### Phase 4 -- BGP EVPN overlay (`labs/02-l2evpn-overlay`)
-BGP EVPN control plane on top of the working SRv6 underlay -- MAC/IP reachability and
-VPN membership between PEs. Note: Nokia's own official L2 EVPN tutorial series uses an
-eBGP underlay (RFC7938) rather than ISIS/SRv6 -- overlay/EVPN content from that tutorial
-is being reused here, but its underlay choice is not; don't expect the underlay half of
-that tutorial to match what's built in Phases 1-3.
+### Phase 4 -- EVPN over VXLAN (`labs/02-l2evpn-overlay`) (ACTIVE NEXT -- see pivot note above)
+BGP EVPN control plane over a VXLAN data plane, on top of the existing ISIS underlay --
+not SRv6, per the 7/22/26 pivot. MAC/IP reachability and VPN membership between PEs.
+Note: Nokia's own official L2 EVPN tutorial series uses an eBGP underlay (RFC7938)
+rather than ISIS -- overlay/EVPN content from that tutorial is being reused here, but
+its underlay choice is not; this repo keeps ISIS from Phase 1.
 
 ### Phase 5 -- Intent-based deployment (planned, not started)
 Revisit Phases 1-4 through structured/programmatic config generation instead of manual
