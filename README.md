@@ -27,7 +27,7 @@ state, LSDB, route-table, and surviving a deliberate link failure, not just inst
 a black-box IGP.
 **Status: complete.**
 
-### Phase 2 -- SR-MPLS extensions
+### Phase 2 -- SR-MPLS extensions (SKIPPED -- see decision log in NOTES.md 7/22/26)
 Add segment IDs and label advertisement to the same ISIS instance, IPv4 MPLS dataplane
 still in place. Isolates "ISIS now carries SR info" from the IPv6/SRv6 dataplane jump
 that follows in Phase 3.

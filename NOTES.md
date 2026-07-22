@@ -73,3 +73,34 @@ protocol-independent `local-prefix-sid` (not inside the ISIS instance block
 directly). Unconfirmed whether SR-ISIS TLV advertisement to neighbors follows
 automatically from this path, or needs an explicit toggle inside the ISIS instance
 itself -- verify via adjacency/LSDB inspection before assuming either way.
+
+## Phase 2 decision -- 7/22/26
+
+Attempted Phase 2 (SR-MPLS extensions) on spine1: `set / system mpls ...`
+rejected outright -- `mpls` is not a valid child of `system` in this
+node's schema (confirmed via CLI completion list and `info system`
+output, not a typo).
+
+Root cause, confirmed via containerlab docs + netlab.tools platform
+caveats: MPLS/SR-MPLS on SR Linux is scoped to the 7250 IXR and 7730 SXR
+chassis families, license-required. This lab runs `ixr-d3` (7220 IXR-D3),
+a fixed-configuration platform that runs license-free by design -- MPLS
+was never in scope for this chassis type. Not an arm64/preview-build
+issue; confirmed independent of architecture.
+
+Decision: skip Phase 2 as a discrete step. Cost/benefit didn't clear:
+MPLS is a canon.md Permanent gap (manage via disclosure, not close via
+lab work -- different treatment than EVPN/VXLAN or Ansible/Terraform,
+which were promoted out of Permanent specifically because lab work
+closed them). Phase 2's only job was isolating "ISIS carries SR info"
+from the IPv6-dataplane jump before Phase 3 -- scaffolding value, not
+a standalone artifact this repo needs. License acquisition + chassis-
+type swap (`ixr-d3` -> a 7250 IXR variant) costs real time against a
+step that was never the destination; repo name and stated deliverable
+are SRv6, not SR-MPLS.
+
+Proceeding directly to Phase 3 (SRv6 migration) on the existing
+`ixr-d3` topology. SRv6 chassis-type support on IXR-D3 is unconfirmed
+as of this note -- next session's first action is finding out live,
+not assuming parity with the MPLS restriction just hit.
+
