@@ -137,3 +137,50 @@ Effective phase order going forward: 0 -> 1 -> 4 -> 5. Phases 2 and 3
 are retained below as documented dead ends -- Phase 4 depends only on
 Phase 1's ISIS underlay (loopback reachability for VTEP peering), not
 on 2 or 3, so it's unblocked and moves up next.
+
+## Phase 4 -- EVPN over VXLAN, verified 7/22/26
+
+Built on the existing ISIS underlay (labs/01-underlay), no changes to
+that phase. New lab folder labs/02-l2evpn-overlay/ -- self-contained
+copy of the underlay topology + startup-configs, plus two Linux test
+containers (srv1/srv2) wired to leaf1/leaf2 ethernet-1/3, per the
+Option A decision (self-contained repo, no host-VM bridging
+dependency).
+
+Config: iBGP EVPN session between leaf1 (10.0.0.3) and leaf2 (10.0.0.4)
+directly, riding on ISIS-learned loopback reachability -- no underlay
+BGP needed, unlike Nokia's own tutorial (which uses eBGP underlay +
+iBGP overlay). VXLAN tunnel-interface vxlan1, VNI 89526. MAC-VRF
+vrf-1, EVI 3876, route-target target:64512:3876. Numbering scheme:
+phone-keypad letters-to-digits of VXLAN/EVPN, not tutorial defaults.
+
+Verification, full chain confirmed:
+- ISIS underlay: leaf1 route-table shows 10.0.0.4/32 (leaf2 loopback)
+  active via both spines, ECMP, metric 20 -- fabric-wide reachability
+  before any BGP config touched it.
+- iBGP EVPN session: established, AFI/SAFI evpn, [1/1/1] routes.
+- Type 3 (IMET) route exchanged -- auto-discovery/flooding-list setup.
+- Dataplane: srv1 (192.168.0.1) <-> srv2 (192.168.0.2) ping, 0% loss
+  both directions. ARP tables confirm correct remote MACs learned.
+- Bridge-table: srv1's MAC learnt (local), srv2's MAC evpn-tagged
+  vtep:10.0.0.4 vni:89526 (remote, via EVPN).
+- Type 2 (MAC/IP) route confirmed for srv2's MAC: RD 10.0.0.4:3876,
+  label 89526, status used/valid/best -- the actual control-plane
+  route underpinning the working ping, not inferred from ping success
+  alone.
+
+This is the repo's actual deliverable, achieved on the same ixr-d3
+chassis that rejected SR-MPLS (Phase 2) and SRv6 (Phase 3) outright.
+Pivot from the original SRv6-underlay premise to EVPN-VXLAN is now a
+proven, not theoretical, substitution.
+
+IRB (integrated routing/bridging) noted as a term encountered during
+verification (0 IRB MACs in bridge-table, expected) -- not relevant to
+this phase's scope (pure Type 2 L2 EVPN, single subnet). Would become
+relevant for a future L3/multi-subnet EVPN phase; flagged there rather
+than resolved here since it's out of scope for what was built.
+
+Next: containerlab save to snapshot this running state into
+02-l2evpn-overlay/startup-configs/*.json, per the plan agreed before
+this phase began -- makes the phase reproducible from a fresh deploy,
+not just from this session's live CLI history.
