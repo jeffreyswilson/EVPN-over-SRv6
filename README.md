@@ -25,9 +25,7 @@ Single SR Linux node, confirms image/runtime/Containerlab wiring works before sc
 Goal: close the ISIS operational gap left by prior SPBM-only exposure -- reading adjacency
 state, LSDB, route-table, and surviving a deliberate link failure, not just instantiating
 a black-box IGP.
-**Status: ISIS adjacency established across all 4 nodes (2/2 expected per node).**
-Remaining: per-node loopbacks + ISIS advertisement, route-table verification, deliberate
-link-failure/reconvergence test.
+**Status: complete.**
 
 ### Phase 2 -- SR-MPLS extensions
 Add segment IDs and label advertisement to the same ISIS instance, IPv4 MPLS dataplane
