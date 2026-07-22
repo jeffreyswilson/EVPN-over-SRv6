@@ -1,0 +1,8 @@
+name: verify01
+
+topology:
+  nodes:
+    srl1:
+      kind: nokia_srlinux
+      type: ixr-d3
+      image: ghcr.io/nokia/srlinux:24.10.7
