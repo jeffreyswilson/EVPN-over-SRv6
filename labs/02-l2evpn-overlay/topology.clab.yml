@@ -25,6 +25,38 @@ topology:
       type: ixr-d3
       image: ghcr.io/nokia/srlinux:24.10.7
       startup-config: startup-configs/leaf2.json
+    sw1:
+      kind: linux
+      exec:
+        - ip link add br0 type bridge vlan_filtering 1 vlan_default_pvid 0
+        - bridge vlan del vid 1 dev br0 self
+        - ip link set br0 up
+        - ip link set eth1 master br0
+        - ip link set eth2 master br0
+        - ip link set eth3 master br0
+        - ip link set eth1 up
+        - ip link set eth2 up
+        - ip link set eth3 up
+        - bridge vlan add vid 10 dev eth1
+        - bridge vlan add vid 20 dev eth1
+        - bridge vlan add vid 10 dev eth2 pvid untagged
+        - bridge vlan add vid 20 dev eth3 pvid untagged
+    sw2:
+      kind: linux
+      exec:
+        - ip link add br0 type bridge vlan_filtering 1 vlan_default_pvid 0
+        - bridge vlan del vid 1 dev br0 self
+        - ip link set br0 up
+        - ip link set eth1 master br0
+        - ip link set eth2 master br0
+        - ip link set eth3 master br0
+        - ip link set eth1 up
+        - ip link set eth2 up
+        - ip link set eth3 up
+        - bridge vlan add vid 10 dev eth1
+        - bridge vlan add vid 20 dev eth1
+        - bridge vlan add vid 10 dev eth2 pvid untagged
+        - bridge vlan add vid 20 dev eth3 pvid untagged
     srv1:
       kind: linux
       exec:
@@ -35,11 +67,25 @@ topology:
       exec:
         - ip link set address 00:c1:ab:00:00:02 dev eth1
         - ip addr add 192.168.0.2/24 dev eth1
+    srv3:
+      kind: linux
+      exec:
+        - ip link set address 00:c1:ab:00:00:03 dev eth1
+        - ip addr add 192.168.1.1/24 dev eth1
+    srv4:
+      kind: linux
+      exec:
+        - ip link set address 00:c1:ab:00:00:04 dev eth1
+        - ip addr add 192.168.1.2/24 dev eth1
 
   links:
     - endpoints: ["spine1:e1-1", "leaf1:e1-1"]
     - endpoints: ["spine1:e1-2", "leaf2:e1-1"]
     - endpoints: ["spine2:e1-1", "leaf1:e1-2"]
     - endpoints: ["spine2:e1-2", "leaf2:e1-2"]
-    - endpoints: ["srv1:eth1", "leaf1:e1-3"]
-    - endpoints: ["srv2:eth1", "leaf2:e1-3"]
+    - endpoints: ["leaf1:e1-3", "sw1:eth1"]
+    - endpoints: ["leaf2:e1-3", "sw2:eth1"]
+    - endpoints: ["sw1:eth2", "srv1:eth1"]
+    - endpoints: ["sw1:eth3", "srv3:eth1"]
+    - endpoints: ["sw2:eth2", "srv2:eth1"]
+    - endpoints: ["sw2:eth3", "srv4:eth1"]

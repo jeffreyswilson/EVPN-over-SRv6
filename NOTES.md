@@ -198,18 +198,48 @@ succeeded immediately post-deploy. This confirms the phase is fully
 reproducible from a fresh clone -- same destroy+redeploy validation
 pattern established in Phase 1.
 
-## Phase 5 (multi-tenant EVPN, trunk-access pivot)
+## Phase 5 -- multi-tenant EVPN, trunk-access pivot, verified 2026-07-2x
 
-In progress, started 2026-07-23. Second tenant (VLAN 20, VNI 89527, EVI 3877)
-added.  Design decision: rejected mixed tagged/untagged access on a single
-leaf port (Option A/B tradeoff discussed, not detailed here -- see session chat
-if recovered later). Chosen design: leaf-facing e1-3 retagged from
-untagged-access to a pure VLAN 10+20 trunk; per-leaf VLAN-aware Linux bridge
-(sw1/sw2) inserted downstream, presenting untagged/PVID access ports to servers.
-New nodes: sw1, sw2, srv3, srv4 (4 added, tally: was 6 nodes end of Phase 4, now
-10).  VLAN 1 explicitly dropped on bridge uplink ingress -- no default-VLAN
-leakage toward leaf. Not yet verified end-to-end; verification list TBD at phase
-close, same discipline as Phase 4's route-by-route confirmation.
+Second tenant (VLAN 20, VNI 89527, EVI 3877, RT target:64512:3877) added
+to the existing single-tenant EVPN-VXLAN deployment. Design: leaf-facing
+e1-3 retagged from untagged-access to a uniform VLAN 10+20 trunk (no
+mixed tagged/untagged on one port); per-leaf VLAN-aware Linux bridge
+(sw1/sw2) inserted downstream, presenting untagged/PVID access ports
+to servers (srv1/srv3 off sw1, srv2/srv4 off sw2). VLAN 1 explicitly
+excluded from all bridge ports via vlan_default_pvid 0 at bridge
+creation -- confirmed via bridge vlan show, zero vid-1 membership
+including the uplink. Node count: 10 (was 6 end of Phase 4).
+
+Config built live via SR Linux CLI (sr_cli, candidate/commit), not
+scripted -- deliberate choice for CLI/tab-complete practice over
+Phase 4's file-splice approach. Captured post-verification via
+containerlab save into startup-configs/leaf1.json and leaf2.json.
+
+Verification, full chain confirmed:
+- Same-tenant pings: srv1<->srv2 (VLAN 10, unaffected by retag) and
+  srv3<->srv4 (VLAN 20, new) both succeed.
+- Cross-tenant isolation: srv1<->srv3 ping fails, as expected --
+  separate mac-vrf bridge tables, no shared broadcast domain.
+- Bridge-table MAC learning confirmed on both switches and both leaves,
+  local and remote entries, matching Phase 4's evidentiary standard.
+- Type 3 (IMET) and Type 2 (MAC/IP) routes confirmed for EVI 3877:
+  RD 10.0.0.4:3877, label 89527, status used/valid/best -- via global
+  route table (show network-instance default protocols bgp routes evpn
+  route-type summary), not the per-vrf bgp-evpn bgp-instance command,
+  which showed empty despite the routes being live (see gotcha below).
+  EVI 3876/vrf-1 routes confirmed unaffected in the same table.
+- Destroy + redeploy from captured startup-configs alone, zero live
+  CLI re-entry -- all above re-confirmed post-redeploy. Reproducibility
+  proven, same bar as Phase 4's second entry.
+
+Gotcha for NOTES.md gotchas section: `show network-instance <vrf>
+protocols bgp-evpn bgp-instance <id>` can render an empty EVPN Routes
+section (Next hop/MAC-IP/IMET all None) even when the routes are live
+and valid -- confirmed via cross-check against `show network-instance
+default protocols bgp routes evpn route-type summary`, which showed
+the same routes as used/valid/best. Don't trust the per-instance
+command alone as a "no routes" signal -- cross-check the global RIB
+view before concluding a fault exists.
 
 ## Phase 6 (planned) -- symmetric IRB, L2/L3 integration
 
