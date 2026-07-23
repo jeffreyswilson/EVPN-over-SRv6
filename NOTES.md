@@ -197,3 +197,16 @@ startup-configs alone, no live CLI re-entry. srv1 <-> srv2 ping
 succeeded immediately post-deploy. This confirms the phase is fully
 reproducible from a fresh clone -- same destroy+redeploy validation
 pattern established in Phase 1.
+
+## Phase 5 (multi-tenant EVPN, trunk-access pivot)
+
+In progress, started 2026-07-23. Second tenant (VLAN 20, VNI 89527, EVI 3877)
+added.  Design decision: rejected mixed tagged/untagged access on a single
+leaf port (Option A/B tradeoff discussed, not detailed here -- see session chat
+if recovered later). Chosen design: leaf-facing e1-3 retagged from
+untagged-access to a pure VLAN 10+20 trunk; per-leaf VLAN-aware Linux bridge
+(sw1/sw2) inserted downstream, presenting untagged/PVID access ports to servers.
+New nodes: sw1, sw2, srv3, srv4 (4 added, tally: was 6 nodes end of Phase 4, now
+10).  VLAN 1 explicitly dropped on bridge uplink ingress -- no default-VLAN
+leakage toward leaf. Not yet verified end-to-end; verification list TBD at phase
+close, same discipline as Phase 4's route-by-route confirmation.
