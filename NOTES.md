@@ -210,3 +210,64 @@ New nodes: sw1, sw2, srv3, srv4 (4 added, tally: was 6 nodes end of Phase 4, now
 10).  VLAN 1 explicitly dropped on bridge uplink ingress -- no default-VLAN
 leakage toward leaf. Not yet verified end-to-end; verification list TBD at phase
 close, same discipline as Phase 4's route-by-route confirmation.
+
+## Phase 6 (planned) -- symmetric IRB, L2/L3 integration
+
+Goal: extend Phase 5's two-tenant L2 EVPN into inter-tenant L3 routing --
+integrated routing and bridging (IRB), symmetric mode, per EVPN's own
+architecture rather than a bolt-on static route.
+
+Scope, incremental over Phase 5, no rebuild of existing L2 config:
+- New ip-vrf network-instance per leaf (name TBD, e.g. vrf-l3-tenant),
+  distinct type from the existing mac-vrf vrf-1/vrf-2.
+- IRB subinterfaces (irb0.1 for VLAN 10/vrf-1, irb0.2 for VLAN 20/vrf-2)
+  bridging each mac-vrf into the ip-vrf -- one IRB per tenant subnet,
+  bound into both the mac-vrf (bridged side) and the ip-vrf (routed
+  side) simultaneously.
+- Anycast gateway IP + shared virtual MAC per subnet (192.168.0.254/24
+  for VLAN 10, 192.168.1.254/24 for VLAN 20 -- numbering TBD, avoid
+  colliding with existing host addresses), identical on leaf1 and
+  leaf2 -- symmetric IRB requires the gateway to be answerable
+  identically at either leaf, not anchored to one.
+- New L3 VNI (distinct from the two L2 VNIs 89526/89527) carrying
+  routed inter-subnet traffic between leaves -- symmetric IRB's
+  defining trait vs asymmetric: routing happens at the ingress leaf,
+  packet re-encapsulated into the L3 VNI, decapsulated and bridged
+  out locally at the egress leaf. Asymmetric IRB (routes locally at
+  ingress, bridges remotely) was considered and rejected -- symmetric
+  is the more commonly deployed/documented pattern and matches Nokia's
+  own EVPN-for-L3 guide already used as precedent in the Phase 3->4
+  pivot.
+- New route-target for the ip-vrf, separate community from the two
+  mac-vrf RTs (target:64512:3876 / :3877) -- L3 reachability
+  advertised independently of L2 MAC reachability, per EVPN's
+  RT2-carries-both-but-RT5-or-VRF-RT-scopes-L3 design.
+
+Open items, not yet resolved:
+- [UNCERTAIN] whether SR Linux's srl_nokia-bgp-evpn schema expresses
+  the L3 VNI/ip-vrf EVPN binding as a sibling block to the existing
+  mac-vrf bgp-instance, or requires a materially different config
+  tree -- check live schema (`info` under the candidate ip-vrf's
+  protocols) before drafting concrete JSON, same discipline as the
+  Phase 5 RT-leaf-list schema check that was deferred pending live
+  `info` output.
+- Anycast-gw feature is in this platform's enabled-yang-features list
+  (srl_nokia-features:anycast-gw, confirmed present in both leaf
+  startup-configs) -- feature exists on ixr-d3, no repeat of the
+  Phase 2/3 chassis-restriction pattern expected, but not yet verified
+  against symmetric-IRB specifically vs anycast-gw's other use cases.
+- Route type surface expands: Type 2 (MAC/IP) routes now carry an L3
+  label alongside the existing L2 label (dual-label, per symmetric
+  IRB spec) -- verification step needs to confirm both labels present,
+  not just route presence. Type 5 (IP Prefix) routes are out of scope
+  for this phase (only directly-connected subnets, no external/
+  aggregate prefix advertisement) -- flag as a possible Phase 7 if the
+  lab grows toward WAN-facing/L3-gateway scope.
+- Test plan: srv1 (192.168.0.1, tenant1) -> srv3 (192.168.1.1, tenant2)
+  ping should now succeed (contrast with Phase 5, where this same
+  ping correctly failed due to isolated bridge tables) -- this
+  transition, fail-by-design in Phase 5 to succeed-by-design in
+  Phase 6, is itself the verification signal that L3 integration is
+  live and scoped correctly, not a regression.
+
+Not started -- planning entry only, precedes any live config change.
