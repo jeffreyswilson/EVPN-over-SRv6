@@ -67,15 +67,20 @@ presenting untagged/PVID access ports to four test servers (two per tenant). VLA
 explicitly excluded from all bridge ports. Node count: 10 (was 6 end of Phase 4).
 **Status: complete, verified reproducible.**
 
-### Phase 6 -- Symmetric IRB, L2/L3 integration (planned, not started)
-Extend Phases 4-5's L2-only EVPN into inter-tenant L3 routing via integrated routing
-and bridging (IRB), symmetric mode: new ip-vrf network-instance, IRB subinterfaces
-bridging each tenant's mac-vrf into it, anycast gateway IP + shared virtual MAC per
-subnet (identical at both leaves), new L3 VNI distinct from the two L2 VNIs, separate
-route-target scoping L3 reachability from the existing L2 RTs. Test signal: srv1
-(tenant1) <-> srv3 (tenant2) ping, which correctly fails through Phase 5, should
-succeed once this lands -- fail-by-design to succeed-by-design is the verification
-signal that L2/L3 integration is live and correctly scoped, not a regression.
+### Phase 6 -- Symmetric IRB, L2/L3 integration (`labs/02-l2evpn-overlay`)
+Inter-tenant L3 routing added atop Phases 4-5's L2-only EVPN via symmetric
+integrated routing and bridging (IRB): new ip-vrf `vrf-l3`, IRB subinterfaces
+dual-bound into each tenant's mac-vrf and the ip-vrf, anycast gateways
+(192.168.0.254/24, 192.168.1.254/24, identical both leaves), new L3 VNI 89528 /
+EVI 3878 distinct from the two L2 VNIs. Required EVPN ARP/ND synchronization
+(`ipv4 arp evpn advertise dynamic` on every IRB subinterface) for cross-leaf
+resolution of hosts never locally attached. Separately required a static
+cross-tenant route on each server container (`topology.clab.yml`), without
+which no host could route cross-subnet traffic regardless of leaf-side
+config -- see NOTES.md for both root-cause writeups (7/24 leaf-side fix,
+7/25 server-side fix).
+**Status: complete, verified reproducible (full 12-pair cross-tenant/cross-leaf
+matrix, 0% loss, confirmed across two cold destroy/deploy cycles).**
 
 ### Phase 7 -- Intent-based deployment (planned, not started)
 Revisit Phases 1-6 through structured/programmatic config generation instead of manual
@@ -98,3 +103,6 @@ Jinja2 templates driven off the Containerlab topology file as source of truth.
 - Addressing scheme (Phase 4-5): tenant subnets `192.168.<tenant>.0/24` (tenant1 = 0,
   tenant2 = 1); VNI/EVI numbering follows a phone-keypad letters-to-digits scheme, not
   tutorial defaults.
+- Addressing scheme (Phase 6): anycast gateways at `.254` in each tenant /24,
+  chosen to avoid collision with srv1-4's `.1`/`.2` addresses; VRID 10/20
+  mirrors the tenant VLAN IDs.

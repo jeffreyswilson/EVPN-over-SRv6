@@ -241,63 +241,115 @@ the same routes as used/valid/best. Don't trust the per-instance
 command alone as a "no routes" signal -- cross-check the global RIB
 view before concluding a fault exists.
 
-## Phase 6 (planned) -- symmetric IRB, L2/L3 integration
+## Phase 6 -- symmetric IRB, L2/L3 integration, verified live 2026-07-24
 
-Goal: extend Phase 5's two-tenant L2 EVPN into inter-tenant L3 routing --
-integrated routing and bridging (IRB), symmetric mode, per EVPN's own
-architecture rather than a bolt-on static route.
+Extended Phase 5's two-tenant L2 EVPN into inter-tenant L3 routing via
+symmetric IRB. New ip-vrf `vrf-l3` per leaf; IRB subinterfaces irb0.1
+(tenant1) and irb0.2 (tenant2), each bound into both its mac-vrf and
+vrf-l3 simultaneously -- that dual membership, not any special
+interface type, is what implements the "integrated" part of IRB.
+Anycast gateways 192.168.0.254/24 and 192.168.1.254/24, identical on
+both leaves, MAC derived via `anycast-gw virtual-router-id` (10/20) --
+preferred over hand-typing `anycast-gw-mac` directly: self-documenting,
+one less place for a byte-for-byte cross-leaf mismatch. New L3 VNI
+89528, EVI 3878, RT target:64512:3878, distinct from the two L2 VNIs
+per plan.
 
-Scope, incremental over Phase 5, no rebuild of existing L2 config:
-- New ip-vrf network-instance per leaf (name TBD, e.g. vrf-l3-tenant),
-  distinct type from the existing mac-vrf vrf-1/vrf-2.
-- IRB subinterfaces (irb0.1 for VLAN 10/vrf-1, irb0.2 for VLAN 20/vrf-2)
-  bridging each mac-vrf into the ip-vrf -- one IRB per tenant subnet,
-  bound into both the mac-vrf (bridged side) and the ip-vrf (routed
-  side) simultaneously.
-- Anycast gateway IP + shared virtual MAC per subnet (192.168.0.254/24
-  for VLAN 10, 192.168.1.254/24 for VLAN 20 -- numbering TBD, avoid
-  colliding with existing host addresses), identical on leaf1 and
-  leaf2 -- symmetric IRB requires the gateway to be answerable
-  identically at either leaf, not anchored to one.
-- New L3 VNI (distinct from the two L2 VNIs 89526/89527) carrying
-  routed inter-subnet traffic between leaves -- symmetric IRB's
-  defining trait vs asymmetric: routing happens at the ingress leaf,
-  packet re-encapsulated into the L3 VNI, decapsulated and bridged
-  out locally at the egress leaf. Asymmetric IRB (routes locally at
-  ingress, bridges remotely) was considered and rejected -- symmetric
-  is the more commonly deployed/documented pattern and matches Nokia's
-  own EVPN-for-L3 guide already used as precedent in the Phase 3->4
-  pivot.
-- New route-target for the ip-vrf, separate community from the two
-  mac-vrf RTs (target:64512:3876 / :3877) -- L3 reachability
-  advertised independently of L2 MAC reachability, per EVPN's
-  RT2-carries-both-but-RT5-or-VRF-RT-scopes-L3 design.
+Schema findings, useful beyond this phase:
+- `network-instance type` is a closed set: `default | ip-vrf | mac-vrf`.
+- `bgp-evpn` and `bgp-vpn` protocol blocks are structurally identical
+  under mac-vrf and ip-vrf -- no separate ip-vrf-specific config tree.
+  `bgp-vpn`'s own help text confirms it's shared: "common bgp-ipvpn and
+  bgp-evpn parameters."
+- IRB subinterfaces reject the `type` leaf outright at commit
+  (`FailedPrecondition: type not supported on this interface`), even
+  though tab-complete lists `routed|bridged|local-mirror-dest` as
+  valid values for subinterfaces generally. IRB's dual L2/L3 nature
+  comes entirely from being referenced in two network-instances'
+  `interface` lists, not from a type declaration.
+- `bridge-table proxy-arp` cannot be configured on a mac-vrf that has
+  an IRB attached -- schema-enforced (`IRB interfaces cannot be
+  configured with proxy-arp`), not a workaround-able error. ARP
+  synchronization for IRB uses a different mechanism entirely (next
+  point).
 
-Open items, not yet resolved:
-- [UNCERTAIN] whether SR Linux's srl_nokia-bgp-evpn schema expresses
-  the L3 VNI/ip-vrf EVPN binding as a sibling block to the existing
-  mac-vrf bgp-instance, or requires a materially different config
-  tree -- check live schema (`info` under the candidate ip-vrf's
-  protocols) before drafting concrete JSON, same discipline as the
-  Phase 5 RT-leaf-list schema check that was deferred pending live
-  `info` output.
-- Anycast-gw feature is in this platform's enabled-yang-features list
-  (srl_nokia-features:anycast-gw, confirmed present in both leaf
-  startup-configs) -- feature exists on ixr-d3, no repeat of the
-  Phase 2/3 chassis-restriction pattern expected, but not yet verified
-  against symmetric-IRB specifically vs anycast-gw's other use cases.
-- Route type surface expands: Type 2 (MAC/IP) routes now carry an L3
-  label alongside the existing L2 label (dual-label, per symmetric
-  IRB spec) -- verification step needs to confirm both labels present,
-  not just route presence. Type 5 (IP Prefix) routes are out of scope
-  for this phase (only directly-connected subnets, no external/
-  aggregate prefix advertisement) -- flag as a possible Phase 7 if the
-  lab grows toward WAN-facing/L3-gateway scope.
-- Test plan: srv1 (192.168.0.1, tenant1) -> srv3 (192.168.1.1, tenant2)
-  ping should now succeed (contrast with Phase 5, where this same
-  ping correctly failed due to isolated bridge tables) -- this
-  transition, fail-by-design in Phase 5 to succeed-by-design in
-  Phase 6, is itself the verification signal that L3 integration is
-  live and scoped correctly, not a regression.
+Root cause identified in the 2026-07-24 session: EVPN Type 2 (MAC/IP)
+routes were advertised with the IP field empty (`0.0.0.0`) by default
+-- only the anycast-gw's own address populated it. A leaf with no
+local host in a given subnet (e.g. leaf2 for srv3, since symmetric IRB
+makes both leaves treat every tenant subnet as "locally connected")
+had no way to resolve ARP for a remote host: local ARP could never
+succeed (host isn't actually there), and the MAC-only route gave it
+nothing to synchronize from. Fix: `set / interface irb0 subinterface
+<n> ipv4 arp evpn advertise dynamic` on every IRB subinterface, both
+leaves -- pushes locally-learned dynamic ARP entries into the Type 2
+route's IP field, letting remote leaves populate ARP purely from BGP.
+Symptom before the fix: cross-leaf, cross-tenant pings succeeded or
+failed asymmetrically depending on which host had incidentally
+triggered local ARP learning first -- looked random, wasn't; every
+failure traced to "destination host never locally attached to the
+leaf trying to deliver to it, and its Type 2 route carried no IP."
+A transient `irb-mac-address-not-programmed` chassis event during the
+original multi-step commit was a red herring -- self-recovered via
+interface flap, unrelated to the actual ARP/EVPN root cause; ruled out
+via a clean subinterface rebuild before the real fix was found.
 
-Not started -- planning entry only, precedes any live config change.
+Verification, full matrix, all 12 same-tenant/cross-tenant/cross-leaf
+combinations across all four servers, confirmed 0% loss:
+srv1<->srv2, srv1<->srv3, srv1<->srv4, srv2<->srv3, srv2<->srv4,
+srv3<->srv4 (each direction tested). Cross-tenant/cross-leaf pairs
+(srv1<->srv4, srv2<->srv3) show ttl decrement confirming genuine
+L3 routing via the L3 VNI, not bridging.
+
+Status: verified against live CLI-built config. Reproducibility
+(containerlab save -> startup-configs/ -> destroy/redeploy -> re-run
+matrix cold) not yet performed -- pending, same bar as Phases 4-5
+before their own reproducibility-confirmed follow-up entries.
+
+## Phase 6 follow-up -- cold-boot reproducibility failure, 2026-07-25
+
+First cold-boot test (`containerlab destroy && containerlab deploy`,
+startup-configs captured from the 7/24 session above) failed the full
+cross-tenant matrix at 100% loss, uniformly, across all 8 cross-tenant
+pairs -- indistinguishable at first from the 7/24 symptom. Two
+red herrings pursued and ruled out before the real cause surfaced,
+kept here since both are legitimate, reusable schema findings even
+though neither was the fault this time:
+
+- `ipv4 arp host-route populate <dynamic|evpn|static>` -- controls
+  whether a resolved ARP/ND entry gets promoted to a host /32 FIB
+  route. Confirmed absent on cold boot, added and committed on both
+  leaves, both IRB subinterfaces. Had no effect on the symptom --
+  the missing host /32s turned out to be immaterial, since the
+  existing local /24 route already covered reachability correctly
+  (confirmed via `route-table ... detail`, `Suppressed: false`,
+  successful FIB add on the /24).
+- Delete+recommit of `arp evpn advertise dynamic` (the actual 7/24
+  fix) -- retested on the theory that it was again stuck at its
+  boot-time-only evaluation. Also had no effect.
+
+Actual root cause: **the Linux server containers (srv1-4) had no
+static route to the other tenant's subnet at all.** `topology.clab.yml`'s
+per-server `exec` block was missing an `ip route add` line (e.g.
+`ip route add 192.168.1.0/24 via 192.168.0.254 dev eth1` on srv1) --
+servers had no way to reach the anycast gateway for cross-subnet
+destinations regardless of leaf-side config correctness. 
+Confirmed via `ip route` on all four containers (all missing
+the cross-tenant route identically) and via `tcpdump -i e1-3` on
+leaf1 showing zero ICMP traffic ever arriving from srv1 toward srv3,
+despite every leaf-side control-plane check (ARP, EVPN Type-2,
+route-table, IRB interface counters, ACLs, ip-forwarding options)
+coming back clean. Lesson for future sessions: a uniformly-clean
+control plane on every device in the path is itself a signal to
+check the endpoints' own routing, not to re-verify device config a
+second or third time.
+
+Fix: added one `ip route add` line per server in `topology.clab.yml`'s
+`exec` block, pointing each host at its local anycast gateway for the
+other tenant's subnet. Verified cold: `containerlab destroy && deploy`,
+full 12-pair matrix, run twice more after an initial single transient
+failure (srv1->srv4 only, self-cleared on immediate retry, consistent
+with first-boot EVPN convergence timing rather than a persistent
+fault). Three consecutive clean runs across two full destroy/deploy
+cycles. Phase 6 now meets the same cold-boot reproducibility bar as
+Phases 4-5.
