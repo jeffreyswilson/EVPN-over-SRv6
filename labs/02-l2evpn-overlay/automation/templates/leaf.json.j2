@@ -1,0 +1,237 @@
+{#
+  Renders one leaf's startup-config (EVPN-relevant sections only).
+  Call with: leaf = single entry from intent.leaves
+             peer_leaf = the other leaf's dict (for BGP neighbor resolution)
+             tenants = intent.tenants
+             fabric = intent.fabric
+#}
+{
+  "srl_nokia-interfaces:interface": [
+{% for uplink in leaf.uplinks %}
+    {
+      "name": "{{ uplink.local_intf | srl_ifname }}",
+      "admin-state": "enable",
+      "subinterface": [
+        {
+          "index": 0,
+          "type": "srl_nokia-interfaces:routed",
+          "admin-state": "enable",
+          "ipv4": {
+            "admin-state": "enable",
+            "address": [ { "ip-prefix": "{{ uplink.local_ip }}" } ]
+          }
+        }
+      ]
+    },
+{% endfor %}
+    {
+      "name": "{{ leaf.access_intf | srl_ifname }}",
+      "srl_nokia-interfaces-vlans:vlan-tagging": true,
+      "subinterface": [
+{% for t in tenants %}
+        {
+          "index": {{ loop.index0 }},
+          "type": "srl_nokia-interfaces:bridged",
+          "admin-state": "enable",
+          "srl_nokia-interfaces-vlans:vlan": {
+            "encap": { "single-tagged": { "vlan-id": {{ t.vlan }} } }
+          }
+        }{{ "," if not loop.last }}
+{% endfor %}
+      ]
+    },
+    {
+      "name": "irb0",
+      "subinterface": [
+{% for t in tenants %}
+        {
+          "index": {{ t.irb_subif_index }},
+          "admin-state": "enable",
+          "ipv4": {
+            "admin-state": "enable",
+            "address": [
+              { "ip-prefix": "{{ t.gateway }}/{{ t.subnet.split('/')[1] }}", "anycast-gw": true }
+            ],
+            "srl_nokia-interfaces-nbr:arp": {
+              "srl_nokia-interfaces-nbr-evpn:evpn": {
+                "advertise": [ { "route-type": "dynamic" } ]
+              }
+            }
+          },
+          "anycast-gw": { "virtual-router-id": {{ t.virtual_router_id }} }
+        }{{ "," if not loop.last }}
+{% endfor %}
+      ]
+    },
+    {
+      "name": "mgmt0",
+      "admin-state": "enable",
+      "subinterface": [
+        {
+          "index": 0,
+          "admin-state": "enable",
+          "ipv4": { "admin-state": "enable", "srl_nokia-interfaces-ip-dhcp:dhcp-client": {} },
+          "ipv6": { "admin-state": "enable", "srl_nokia-interfaces-ip-dhcp:dhcp-client": {} }
+        }
+      ]
+    },
+    {
+      "name": "system0",
+      "subinterface": [
+        {
+          "index": 0,
+          "ipv4": {
+            "admin-state": "enable",
+            "address": [ { "ip-prefix": "{{ leaf.system_ip }}/32" } ]
+          }
+        }
+      ]
+    }
+  ],
+  "srl_nokia-network-instance:network-instance": [
+    {
+      "name": "default",
+      "interface": [
+{% for uplink in leaf.uplinks %}
+        { "name": "{{ uplink.local_intf | srl_ifname }}.0" },
+{% endfor %}
+        { "name": "system0.0" }
+      ],
+      "protocols": {
+        "srl_nokia-isis:isis": {
+          "instance": [
+            {
+              "name": "ISIS",
+              "admin-state": "enable",
+              "level-capability": "L2",
+              "max-ecmp-paths": 2,
+              "net": [ "{{ leaf.isis_net }}" ],
+              "ipv4-unicast": { "admin-state": "enable" },
+              "interface": [
+{% for uplink in leaf.uplinks %}
+                {
+                  "interface-name": "{{ uplink.local_intf | srl_ifname}}.0",
+                  "circuit-type": "point-to-point",
+                  "ipv4-unicast": { "admin-state": "enable" }
+                },
+{% endfor %}
+                { "interface-name": "system0.0", "ipv4-unicast": { "admin-state": "enable" } }
+              ]
+            }
+          ]
+        },
+        "srl_nokia-bgp:bgp": {
+          "autonomous-system": {{ fabric.as_number }},
+          "router-id": "{{ leaf.system_ip }}",
+          "afi-safi": [ { "afi-safi-name": "srl_nokia-common:evpn", "admin-state": "enable" } ],
+          "group": [
+            {
+              "group-name": "iBGP-overlay",
+              "peer-as": {{ fabric.as_number }},
+              "export-policy": ["all"],
+              "import-policy": ["all"],
+              "afi-safi": [
+                { "afi-safi-name": "srl_nokia-common:evpn", "admin-state": "enable" },
+                { "afi-safi-name": "srl_nokia-common:ipv4-unicast", "admin-state": "disable" }
+              ],
+              "local-as": { "as-number": {{ fabric.as_number }} },
+              "timers": { "minimum-advertisement-interval": 1 }
+            }
+          ],
+          "neighbor": [
+            {
+              "peer-address": "{{ peer_leaf.system_ip }}",
+              "peer-group": "iBGP-overlay",
+              "transport": { "local-address": "{{ leaf.system_ip }}" }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "mgmt",
+      "type": "srl_nokia-network-instance:ip-vrf",
+      "admin-state": "enable",
+      "description": "Management network instance",
+      "interface": [ { "name": "mgmt0.0" } ],
+      "protocols": {
+        "srl_nokia-linux:linux": {
+          "import-routes": true, "export-routes": true, "export-neighbors": true
+        }
+      }
+    },
+{% for t in tenants %}
+    {
+      "name": "{{ t.name }}",
+      "type": "srl_nokia-network-instance:mac-vrf",
+      "admin-state": "enable",
+      "interface": [
+        { "name": "{{ leaf.access_intf | srl_ifname }}.{{ loop.index0 }}" },
+        { "name": "irb0.{{ t.irb_subif_index }}" }
+      ],
+      "vxlan-interface": [ { "name": "vxlan1.{{ t.irb_subif_index }}" } ],
+      "protocols": {
+        "bgp-evpn": {
+          "srl_nokia-bgp-evpn:bgp-instance": [
+            { "id": 1, "admin-state": "enable", "vxlan-interface": "vxlan1.{{ t.irb_subif_index }}", "evi": {{ t.evi }} }
+          ]
+        },
+        "srl_nokia-bgp-vpn:bgp-vpn": {
+          "bgp-instance": [
+            {
+              "id": 1,
+              "route-target": {
+                "export-rt": "target:{{ fabric.as_number }}:{{ t.evi }}",
+                "import-rt": "target:{{ fabric.as_number }}:{{ t.evi }}"
+              }
+            }
+          ]
+        }
+      }
+    },
+{% endfor %}
+    {
+      "name": "vrf-l3",
+      "type": "srl_nokia-network-instance:ip-vrf",
+      "admin-state": "enable",
+      "interface": [
+{% for t in tenants %}
+        { "name": "irb0.{{ t.irb_subif_index }}" }{{ "," if not loop.last }}
+{% endfor %}
+      ],
+      "vxlan-interface": [ { "name": "vxlan1.3" } ],
+      "protocols": {
+        "bgp-evpn": {
+          "srl_nokia-bgp-evpn:bgp-instance": [
+            { "id": 1, "admin-state": "enable", "vxlan-interface": "vxlan1.3", "evi": {{ fabric.l3evi }} }
+          ]
+        },
+        "srl_nokia-bgp-vpn:bgp-vpn": {
+          "bgp-instance": [
+            {
+              "id": 1,
+              "route-target": {
+                "export-rt": "target:{{ fabric.as_number }}:{{ fabric.l3evi }}",
+                "import-rt": "target:{{ fabric.as_number }}:{{ fabric.l3evi }}"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "srl_nokia-tunnel-interfaces:tunnel-interface": [
+    {
+      "name": "vxlan1",
+      "vxlan-interface": [
+{% for t in tenants %}
+        { "index": {{ t.irb_subif_index }}, "type": "srl_nokia-interfaces:bridged", "ingress": { "vni": {{ t.vni }} } },
+{% endfor %}
+        { "index": 3, "type": "srl_nokia-interfaces:routed", "ingress": { "vni": {{ fabric.l3vni }} } }
+      ]
+    }
+  ],
+  "srl_nokia-routing-policy:routing-policy": {
+    "policy": [ { "name": "all", "default-action": { "policy-result": "accept" } } ]
+  }
+}

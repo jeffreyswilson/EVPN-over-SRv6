@@ -1,7 +1,8 @@
 {
   "srl_nokia-interfaces:interface": [
+{% for u in spine.uplinks %}
     {
-      "name": "ethernet-1/1",
+      "name": "{{ u.local_intf | srl_ifname }}",
       "admin-state": "enable",
       "subinterface": [
         {
@@ -12,32 +13,14 @@
             "admin-state": "enable",
             "address": [
               {
-                "ip-prefix": "192.168.21.1/30"
+                "ip-prefix": "{{ u.local_ip }}"
               }
             ]
           }
         }
       ]
     },
-    {
-      "name": "ethernet-1/2",
-      "admin-state": "enable",
-      "subinterface": [
-        {
-          "index": 0,
-          "type": "srl_nokia-interfaces:routed",
-          "admin-state": "enable",
-          "ipv4": {
-            "admin-state": "enable",
-            "address": [
-              {
-                "ip-prefix": "192.168.22.1/30"
-              }
-            ]
-          }
-        }
-      ]
-    },
+{% endfor %}
     {
       "name": "mgmt0",
       "admin-state": "enable",
@@ -69,7 +52,7 @@
             "admin-state": "enable",
             "address": [
               {
-                "ip-prefix": "10.0.0.2/32"
+                "ip-prefix": "{{ spine.system_ip }}/32"
               }
             ]
           }
@@ -81,12 +64,11 @@
     {
       "name": "default",
       "interface": [
+{% for u in spine.uplinks %}
         {
-          "name": "ethernet-1/1.0"
+          "name": "{{ u.local_intf | srl_ifname }}.0"
         },
-        {
-          "name": "ethernet-1/2.0"
-        },
+{% endfor %}
         {
           "name": "system0.0"
         }
@@ -100,26 +82,21 @@
               "level-capability": "L2",
               "max-ecmp-paths": 2,
               "net": [
-                "49.0001.0000.0000.0002.00"
+                "{{ spine.isis_net }}"
               ],
               "ipv4-unicast": {
                 "admin-state": "enable"
               },
               "interface": [
+{% for u in spine.uplinks %}
                 {
-                  "interface-name": "ethernet-1/1.0",
+                  "interface-name": "{{ u.local_intf | srl_ifname }}.0",
                   "circuit-type": "point-to-point",
                   "ipv4-unicast": {
                     "admin-state": "enable"
                   }
                 },
-                {
-                  "interface-name": "ethernet-1/2.0",
-                  "circuit-type": "point-to-point",
-                  "ipv4-unicast": {
-                    "admin-state": "enable"
-                  }
-                },
+{% endfor %}
                 {
                   "interface-name": "system0.0",
                   "ipv4-unicast": {

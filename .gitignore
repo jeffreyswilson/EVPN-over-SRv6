@@ -4,3 +4,4 @@ clab-*/
 ssh-config
 topology-data.json
 clab-*/*/config/aaamgr_local_user.json
+automation/output/

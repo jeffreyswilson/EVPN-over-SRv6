@@ -1,0 +1,131 @@
+# Phase 7 intent schema -- derived from Phase 6 cold-boot-verified baseline
+# (leaf1.json, leaf2.json, spine1.json, spine2.json, topology.clab.yml)
+# This file is the single source of truth Jinja2 templates render from.
+
+fabric:
+  as_number: 64512
+  isis_area: "49.0001"
+  l3vni: 89528
+  l3evi: 3878
+
+spines:
+  - id: spine1
+    role: spine
+    system_ip: 10.0.0.1
+    isis_net: "49.0001.0000.0000.0001.00"
+    uplinks:
+      - local_intf: e1-1
+        peer: leaf1
+        peer_intf: e1-1
+        local_ip: 192.168.11.1/30
+      - local_intf: e1-2
+        peer: leaf2
+        peer_intf: e1-1
+        local_ip: 192.168.12.1/30
+
+  - id: spine2
+    role: spine
+    system_ip: 10.0.0.2
+    isis_net: "49.0001.0000.0000.0002.00"
+    uplinks:
+      - local_intf: e1-1
+        peer: leaf1
+        peer_intf: e1-2
+        local_ip: 192.168.21.1/30
+      - local_intf: e1-2
+        peer: leaf2
+        peer_intf: e1-2
+        local_ip: 192.168.22.1/30
+
+leaves:
+  - id: leaf1
+    role: leaf
+    system_ip: 10.0.0.3
+    isis_net: "49.0001.0000.0000.0003.00"
+    uplinks:
+      - local_intf: e1-1
+        peer: spine1
+        peer_intf: e1-1
+        local_ip: 192.168.11.2/30
+      - local_intf: e1-2
+        peer: spine2
+        peer_intf: e1-1
+        local_ip: 192.168.21.2/30
+    access_intf: e1-3   # trunk to local switch, single-tagged per tenant vlan
+    bgp_evpn_neighbor: leaf2   # resolved to peer system_ip at render time
+
+  - id: leaf2
+    role: leaf
+    system_ip: 10.0.0.4
+    isis_net: "49.0001.0000.0000.0004.00"
+    uplinks:
+      - local_intf: e1-1
+        peer: spine1
+        peer_intf: e1-2
+        local_ip: 192.168.12.2/30
+      - local_intf: e1-2
+        peer: spine2
+        peer_intf: e1-2
+        local_ip: 192.168.22.2/30
+    access_intf: e1-3
+    bgp_evpn_neighbor: leaf1
+
+# Applied identically on every leaf. Rendered onto each leaf's irb0
+# subinterfaces, vrf-1/vrf-2 mac-vrfs, and vxlan1 ingress VNIs.
+tenants:
+  - name: vrf-1
+    vlan: 10
+    vni: 89526
+    evi: 3876
+    subnet: 192.168.0.0/24
+    gateway: 192.168.0.254
+    virtual_router_id: 10
+    irb_subif_index: 1
+
+  - name: vrf-2
+    vlan: 20
+    vni: 89527
+    evi: 3877
+    subnet: 192.168.1.0/24
+    gateway: 192.168.1.254
+    virtual_router_id: 20
+    irb_subif_index: 2
+
+# Server-side static routes -- the Phase 6 root-cause fix. Every server
+# needs an ip route to the OTHER tenant's subnet via the local anycast gw.
+# This block exists so the render step can never again omit it.
+servers:
+  - id: srv1
+    mac: "00:c1:ab:00:00:01"
+    ip: 192.168.0.1/24
+    switch: sw1
+    tenant: vrf-1
+    remote_subnet: 192.168.1.0/24
+    gateway: 192.168.0.254
+  - id: srv2
+    mac: "00:c1:ab:00:00:02"
+    ip: 192.168.0.2/24
+    switch: sw2
+    tenant: vrf-1
+    remote_subnet: 192.168.1.0/24
+    gateway: 192.168.0.254
+  - id: srv3
+    mac: "00:c1:ab:00:00:03"
+    ip: 192.168.1.1/24
+    switch: sw1
+    tenant: vrf-2
+    remote_subnet: 192.168.0.0/24
+    gateway: 192.168.1.254
+  - id: srv4
+    mac: "00:c1:ab:00:00:04"
+    ip: 192.168.1.2/24
+    switch: sw2
+    tenant: vrf-2
+    remote_subnet: 192.168.0.0/24
+    gateway: 192.168.1.254
+
+# Fixed, non-templatable per canon Step 1 finding: CPM ACL filter set,
+# TLS server-profile (containerlab-generated cert/key), AAA SSH keys,
+# SNMP community, banner, logging, gRPC server block, YANG feature list.
+# These stay as static config blocks copied verbatim into every rendered
+# device config -- not driven by this intent file.
