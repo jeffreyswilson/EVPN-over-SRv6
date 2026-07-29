@@ -82,15 +82,23 @@ config -- see NOTES.md for both root-cause writeups (7/24 leaf-side fix,
 **Status: complete, verified reproducible (full 12-pair cross-tenant/cross-leaf
 matrix, 0% loss, confirmed across two cold destroy/deploy cycles).**
 
-### Phase 7 -- Intent-based deployment (planned, not started)
-Revisit Phases 1-6 through structured/programmatic config generation instead of manual
-per-node CLI, once the manual version is fully working end to end. Deliberately sequenced
-last -- automating a config not yet understood just relocates debugging into a harder-to
--inspect layer (troubleshooting generated output *and* device state simultaneously).
-Candidates under consideration: gNMI-based Python (pygnmi/scrapli -- native fit for SR
-Linux's gNMI-first model, avoids CLI-scraping and the class of missing-intermediate-node
-errors hit manually in Phase 1), Ansible + `nokia.srlinux` collection, or Nornir +
-Jinja2 templates driven off the Containerlab topology file as source of truth.
+### Phase 7 -- Intent-based deployment (`labs/02-l2evpn-overlay/automation`)
+Structured, programmatic generation of Phases 4-6's startup-configs from a
+single declarative source (`automation/intent.yml`) instead of hand-maintained
+per-node JSON. Jinja2 templates (`leaf.json.j2`, `spine.json.j2`) render
+per-device startup-config from intent.yml's leaves/spines/tenants/fabric
+sections; `render.py` drives the render+validate+write loop (json.loads()
+schema validation before write, one output file per device).
+Interface-naming translation (containerlab's `e1-N` short form vs. SR Linux's
+native `ethernet-1/N`) is handled once, at the render boundary, via a Jinja
+filter -- intent.yml itself stays in containerlab's vocabulary throughout,
+matching topology.clab.yml rather than needing two hand-synced dialects.
+**Status: complete.** Both templates validated by diffing rendered output
+against the live-verified startup-configs from Phases 4-6 (leaf1/leaf2,
+spine1/spine2) -- differences are whitespace/formatting only. Spine template
+additionally validated by a live cold-boot round-trip: containerlab pointed
+directly at `automation/output/` in place of the hand-maintained
+`startup-configs/`, full 12-pair cross-tenant/cross-leaf matrix, 0% loss.
 
 ## Repo conventions
 

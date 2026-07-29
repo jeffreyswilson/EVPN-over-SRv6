@@ -353,3 +353,51 @@ with first-boot EVPN convergence timing rather than a persistent
 fault). Three consecutive clean runs across two full destroy/deploy
 cycles. Phase 6 now meets the same cold-boot reproducibility bar as
 Phases 4-5.
+
+## Phase 7 -- intent-based deployment, verified 2026-07-29
+
+automation/intent.yml declares leaves, spines, tenants, and fabric-level
+values (AS number, ISIS area, L3 VNI/EVI) as the single source of truth.
+Jinja2 templates render one startup-config JSON per device; render.py calls
+template.render() once per leaf_id/spine_id (not a single render() looping
+internally over all devices) -- mirrors topology.clab.yml's per-node model
+and keeps each render call's output independently diffable against its own
+reference file.
+
+Interface-name translation: intent.yml deliberately keeps containerlab's
+short form (e1-N) rather than SR Linux's native ethernet-1/N, since
+intent.yml sits alongside topology.clab.yml in the same repo and shares its
+vocabulary. Translation happens once, at render time, via a Jinja filter
+(srl_ifname) -- avoids hand-duplicating both spellings in source data. Real
+bug caught during template-vs-reference diffing: srl_ifname was registered
+on the Jinja Environment but never actually invoked in the template body for
+three of four interface-name emission points; the filter's presence in
+env.filters doesn't apply it anywhere without an explicit `| srl_ifname` in
+the template text itself.
+
+Two distinct per-tenant index counters in intent.yml, easy to conflate:
+access-interface subinterface suffix (ethernet-1/3.N) and vxlan1.N are
+zero-based (loop position); irb0.N uses the tenant's own one-based
+irb_subif_index field directly. Same tenant, two different counters, no
+shared field.
+
+vrf-l3 (the L3 VNI/EVI ip-vrf, shared across all tenants) is not part of
+the per-tenant loop -- it's a static block following it, referencing both
+tenants' IRB interfaces directly. Its own vxlan-interface index has no
+backing field in intent.yml; derived in-template as `tenants | length + 1`
+("one past the last tenant") rather than hardcoded, so it stays correct if
+tenant count changes.
+
+Confirmed (again, independently for spine after the earlier leaf-side
+finding in Phase 6): srl_nokia-system:system (TLS/AAA/logging/gRPC/SNMP) and
+the full ACL block are not required in a startup-config file for a working
+cold-boot deploy. Spine1/spine2's startup-configs were hand-reduced to
+interfaces + network-instance only and round-tripped live (containerlab
+destroy/deploy, full cross-tenant matrix, 0% loss) before the template was
+written against that reduced shape -- fact-finding preceded template design
+rather than the reverse.
+
+Incidental finding, not a Phase 7 defect: startup-configs/leaf2.json carried
+a pre-existing `}`/`]` mismatch on the network-instance array's closing
+token, likely introduced during an earlier manual reduction pass. Fixed in
+this session's commit.
