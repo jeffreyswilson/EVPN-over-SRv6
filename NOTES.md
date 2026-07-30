@@ -401,3 +401,30 @@ Incidental finding, not a Phase 7 defect: startup-configs/leaf2.json carried
 a pre-existing `}`/`]` mismatch on the network-instance array's closing
 token, likely introduced during an earlier manual reduction pass. Fixed in
 this session's commit.
+
+## Cold-boot reproducibility re-verified via genuine --cleanup, 2026-07-30
+
+Prompted by a flash-persistence bug found in a separate lab
+(arista-ceos-labs, same evening) -- Containerlab's `ceos` kind was
+found to silently boot from stale per-node state after a plain
+`destroy`, only a genuine `--cleanup` forces real re-seed from source
+config. Raised the question of whether this repo's own Phase 4-6
+"confirmed cold-boot reproducible" claims, all verified via plain
+`destroy && deploy`, might have the same latent gap.
+
+Re-tested: `containerlab destroy -t topology.clab.yml --cleanup`
+(confirmed genuine removal -- deploy log showed "Creating lab
+directory," proving no prior directory existed), followed by
+`containerlab deploy -t topology.clab.yml`. Full 12-pair cross-tenant/
+cross-leaf ping matrix plus 4 gateway checks (`full-cross` script):
+16/16 passed, 0% loss, no transient failures at all -- cleaner than
+the original Phase 6 verification, which had one self-clearing
+single-pair miss on first boot.
+
+Conclusion: this repo's cold-boot reproducibility claim was already
+accurate under the stricter `--cleanup` standard, not merely under a
+plain `destroy`. The `nokia_srlinux` kind does not appear to share the
+`ceos` kind's flash-persistence behavior, or at minimum this specific
+topology isn't exposed to it. Existing gap-analysis.md EVPN/VXLAN
+Closeable classification stands, now with a stronger evidentiary basis
+than it had before tonight.
